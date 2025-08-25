@@ -22,9 +22,14 @@ function setupPathsAndExports {
     LOG_PATH="${OPENH264_BUILD_OUT_PATH}/logs"
 
     export ANDROID_NDK_HOME=$NDK_PATH
+    export ANDROID_NDK_ROOT=$NDK_PATH
     export ANDROID_HOME=$DOWNLOAD_DIR/${SDK_DIR_NAME}
 
     export PATH=${SDK_TOOLS_PATH}:$PATH
+    
+    # Add toolchain to PATH for newer NDK versions
+    TOOLCHAIN_PATH="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin"
+    export PATH=$TOOLCHAIN_PATH:$PATH
 }
 
 function clearBuildDirectory {

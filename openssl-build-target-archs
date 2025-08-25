@@ -1,6 +1,7 @@
 #!/bin/bash -e
 # @author Vincenzo Esposito (v.esposito@voismart.it)
 # Hints and code taken also from https://proandroiddev.com/tutorial-compile-openssl-to-1-1-1-for-android-application-87137968fee
+# Updated for OpenSSL 3.x compatibility
 
 set -e
 
@@ -23,11 +24,11 @@ function setupPathsAndExports {
     LIB_PATH="${OPENSSL_BUILD_OUT_PATH}/libs"
     LOG_PATH="${OPENSSL_BUILD_OUT_PATH}/logs"
 
-    # Export ANDROID_NDK_HOME env var
+    # Export NDK environment variables (OpenSSL 3.x expects ANDROID_NDK_ROOT)
+    export ANDROID_NDK_ROOT=$NDK_PATH
     export ANDROID_NDK_HOME=$NDK_PATH
     # Add toolchains bin directory to PATH
     TOOLCHAIN_PATH="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
-    # for some reason it does not need to be exported
     PATH=$TOOLCHAIN_PATH/bin:$PATH
 }
 
@@ -75,8 +76,10 @@ initialSetup
 setupPathsAndExports
 # Clear and recreate the build output directory
 clearBuildDirectory
-# Set clang compiler, instead of gcc by default
+# Set clang compiler and additional environment variables for OpenSSL 3.x
 CC=clang
+export CROSS_COMPILE=""
+export ANDROID_DEV="$NDK_PATH/platforms/android-${OPENSSL_TARGET_NDK_LEVEL}/arch-arm/usr"
 
 
 ##############################################################################
@@ -100,11 +103,21 @@ do
     ARCHITECTURE="android-arm"
     getArchitecture $arch
 
-    # Create Makefile
-    ./Configure $ARCHITECTURE -D__ANDROID_API__=${OPENSSL_TARGET_NDK_LEVEL} >> "${LOG_PATH}/${arch}.log" 2>&1
+    # Create Makefile for OpenSSL 3.x
+    ./Configure $ARCHITECTURE \
+        -D__ANDROID_API__=${OPENSSL_TARGET_NDK_LEVEL} \
+        no-shared \
+        no-engine \
+        no-asm \
+        no-dso \
+        no-ssl3 \
+        no-weak-ssl-ciphers \
+        no-deprecated \
+        >> "${LOG_PATH}/${arch}.log" 2>&1
 
-    # Build Openssl
+    # Build OpenSSL
     echo "Building OpenSSL Library for Android arch $arch"
+    make clean >> "${LOG_PATH}/${arch}.log" 2>&1
     make >> "${LOG_PATH}/${arch}.log" 2>&1
     mkdir -p $OPENSSL_OUTPUT_PATH
     OUTPUT_LIB=$OPENSSL_OUTPUT_PATH/lib
@@ -114,8 +127,29 @@ do
     cp -RL include/openssl $OUTPUT_INCLUDE
 
     # Copy libs to final destination folder
+    # OpenSSL 3.x libraries
+    if [ -f libssl.a ]; then
     cp libssl.a $OUTPUT_LIB
+    else
+        echo "Warning: libssl.a not found for arch $arch"
+    fi
+    
+    if [ -f libcrypto.a ]; then
     cp libcrypto.a $OUTPUT_LIB
+    else
+        echo "Warning: libcrypto.a not found for arch $arch"
+    fi
+    
+    # Check if we need to copy from .libs directory (some OpenSSL versions use this)
+    if [ -d .libs ]; then
+        if [ -f .libs/libssl.a ]; then
+            cp .libs/libssl.a $OUTPUT_LIB
+        fi
+        if [ -f .libs/libcrypto.a ]; then
+            cp .libs/libcrypto.a $OUTPUT_LIB
+        fi
+    fi
+    
     # Uncomment if you want .so libs (pjsip only needs the static libs)
     # cp libssl.so $OUTPUT_LIB
     # cp libcrypto.so $OUTPUT_LIB
